@@ -1,6 +1,6 @@
 # rsjpeg
 
-This is a toy project implementing a json decoder in safe Rust.
+This is a toy project implementing a jpeg decoder in safe Rust.
 Eventually, the goal is to provide a libjpeg ABI compatible decoder for
 applications where security outweighs performance.
 
