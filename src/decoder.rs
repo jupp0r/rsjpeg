@@ -1,27 +1,33 @@
-use nom::le_u8;
+use nom::be_u16;
 
 use failure::Error;
 
 use errors::ParserError;
 
-named!(jpeg<&[u8], (Vec<&[u8]>, &[u8])>, delimited!(soi, jfif, end));
+named!(jpeg<&[u8], (Vec<&[u8]>, &[u8])>,  preceded!(soi, jfif));
 named!(soi, tag!(b"\xff\xd8"));
 named!(end, tag!(b"\xff\xd9"));
 named!(
     segment,
-    preceded!(
+    dbg_dmp!(preceded!(
         tag!(b"\xff"),
-        preceded!(not!(tag!(b"\x00")), length_data!(le_u8))
-    )
+        preceded!(
+            take!(1),
+            length_data!(|i| be_u16(i).map(|(v, l)| (v, l - 2)))
+        )
+    ))
 );
 named!(jfif<&[u8], (Vec<&[u8]>, &[u8])>, many_till!(segment, end));
 
 pub fn decode(jpeg_file: &[u8]) -> Result<Vec<u8>, Error> {
     jpeg(jpeg_file)
         .map(|parsed_correctly| paste(&(parsed_correctly.1).0))
-        .map_err(|e| ParserError {
-            reason: format!("{:?}", e),
-        }.into())
+        .map_err(|e| {
+            ParserError {
+                reason: format!("{:?}", e),
+            }
+            .into()
+        })
 }
 
 fn paste(_segments: &Vec<&[u8]>) -> Vec<u8> {
