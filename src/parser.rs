@@ -1,4 +1,4 @@
-use nom::{be_u16, be_u8};
+use nom::{be_u16, be_u8, Needed};
 
 use failure::Error;
 
@@ -7,6 +7,7 @@ use errors::ParserError;
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker<'a> {
     Other(SomeMarker<'a>),
+    DHT(DefineHuffmanTable<'a>),
     Image(ImageStream<'a>),
 }
 
@@ -15,6 +16,20 @@ pub struct SomeMarker<'a> {
     pub tag: u8,
     pub length: u16,
     pub data: &'a [u8],
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum DHTType {
+    LuminanceDC,
+    LuminanceAC,
+    ChrominanceDC,
+    ChrominanceAC,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct DefineHuffmanTable<'a> {
+    pub class: DHTType,
+    pub symbols: [&'a [u8]; 16],
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -34,10 +49,44 @@ named!(
     )
 );
 
+named!(huffman_table<&[u8], Marker>,
+    do_parse!(
+        tag!(b"\xff\xc4")
+        >> take!(2)
+        >> id_class: bits!(pair!(take_bits!(u8, 4), take_bits!(u8, 4)))
+        >> symbols_length: count_fixed!(u8, be_u8, 16)
+        >> s1: take!(symbols_length[0])
+        >> s2: take!(symbols_length[1])
+        >> s3: take!(symbols_length[2]) 
+        >> s4: take!(symbols_length[3])
+        >> s5: take!(symbols_length[4])
+        >> s6: take!(symbols_length[5])
+        >> s7: take!(symbols_length[6])
+        >> s8: take!(symbols_length[7])
+        >> s9: take!(symbols_length[8])
+        >> s10: take!(symbols_length[9])
+        >> s11: take!(symbols_length[10])
+        >> s12: take!(symbols_length[11])
+        >> s13: take!(symbols_length[12])
+        >> s14: take!(symbols_length[13])
+        >> s15: take!(symbols_length[14])
+        >> s16: take!(symbols_length[15])
+        >> (Marker::DHT(DefineHuffmanTable{
+            class: match id_class {
+                (0,0) => DHTType::LuminanceDC,
+                (0,1) => DHTType::LuminanceAC,
+                (1,0) => DHTType::ChrominanceDC,
+                (1,1) => DHTType::ChrominanceAC,
+                _ => return Err(nom::Err::Incomplete(Needed::Size(5)))
+            },
+            symbols: [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, s14, s15, s16],
+        }))
+    )
+);
+
 named!(some_marker<&[u8], Marker>,
     do_parse!(
         tag!(b"\xff")
-        >> not!(tag!(b"\xda"))
         >> tag: be_u8
         >> length: be_u16
         >> data: take!(length - 2)
@@ -45,10 +94,17 @@ named!(some_marker<&[u8], Marker>,
     )
 );
 
+
+
 named!(jpeg<&[u8], (Vec<Marker>, &[u8])>, preceded!(soi, jfif));
 named!(soi, tag!(b"\xff\xd8"));
 
-named!(jfif<&[u8], (Vec<Marker>, &[u8])>, many_till!(alt!(complete!(some_marker) | complete!(start_of_stream)), tag!(b"\xff\xd9")));
+named!(jfif<&[u8], (Vec<Marker>, &[u8])>,
+      many_till!(alt!(
+            complete!(start_of_stream)
+          | complete!(huffman_table)
+          | complete!(some_marker))
+          , tag!(b"\xff\xd9")));
 
 pub fn decode(jpeg_file: &[u8]) -> Result<Vec<Marker>, Error> {
     jpeg(jpeg_file)
