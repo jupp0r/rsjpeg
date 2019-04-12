@@ -4,8 +4,7 @@ extern crate nom;
 #[macro_use]
 extern crate failure;
 
-mod parser;
 mod errors;
+mod parser;
 
 pub use parser::decode;
-
