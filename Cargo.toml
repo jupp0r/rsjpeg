@@ -6,3 +6,4 @@ authors = ["Jupp Mueller <jupp0r@gmail.com>"]
 [dependencies]
 nom = "^4.2"
 failure = "^0.1.5"
+bitvec = "0.13"

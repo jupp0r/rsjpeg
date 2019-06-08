@@ -3,11 +3,12 @@ use nom::{be_u16, be_u8, Needed};
 use failure::Error;
 
 use errors::ParserError;
+use huffman::{DHTType, HuffmanTable};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Marker<'a> {
     Other(SomeMarker<'a>),
-    DHT(Vec<DefineHuffmanTable>),
+    DHT(Vec<HuffmanTable>),
     Image(ImageStream<'a>),
 }
 
@@ -16,20 +17,6 @@ pub struct SomeMarker<'a> {
     pub tag: u8,
     pub length: u16,
     pub data: &'a [u8],
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum DHTType {
-    LuminanceDC,
-    LuminanceAC,
-    ChrominanceDC,
-    ChrominanceAC,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct DefineHuffmanTable {
-    pub class: DHTType,
-    pub symbols: [Vec<u16>; 16],
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -57,7 +44,7 @@ named!(huffman_tables<&[u8], Marker>,
         >> (Marker::DHT(tables))
         )));
 
-named!(huffman_table<&[u8], DefineHuffmanTable>,
+named!(huffman_table<&[u8], HuffmanTable>,
         complete!(do_parse!(
            id_class: dbg_dmp!(bits!(pair!(take_bits!(u8, 4), take_bits!(u8, 4))))
         >> symbols_length: dbg_dmp!(count_fixed!(u8, be_u8, 16))
@@ -77,7 +64,7 @@ named!(huffman_table<&[u8], DefineHuffmanTable>,
         >> s14: dbg_dmp!(count!(be_u16, symbols_length[13].into()))
         >> s15: dbg_dmp!(count!(be_u16, symbols_length[14].into()))
         >> s16: dbg_dmp!(count!(be_u16, symbols_length[15].into()))
-        >> (DefineHuffmanTable{
+        >> (HuffmanTable{
             class: match id_class {
                 (0,0) => DHTType::LuminanceDC,
                 (0,1) => DHTType::LuminanceAC,
@@ -136,7 +123,7 @@ mod tests {
             huffman_tables(&huffman_table_sample),
             Ok((
                 vec![].as_slice(),
-                Marker::DHT(vec![DefineHuffmanTable {
+                Marker::DHT(vec![HuffmanTable {
                     class: DHTType::LuminanceDC,
                     symbols: [
                         vec![],
