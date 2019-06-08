@@ -15,7 +15,9 @@ pub enum DHTType {
 #[derive(Debug, Eq, PartialEq)]
 pub struct HuffmanTable {
     pub class: DHTType,
-    pub symbols: [Vec<u16>; 16],
+    // symbols contains the raw DHT read from the JPEG file. It's not really useful in that format, but needs to
+    // be translated via make_translation_map
+    pub symbols: [Vec<u8>; 16],
 }
 
 impl HuffmanTable {
@@ -30,63 +32,44 @@ impl HuffmanTable {
         let mut cursor = 0usize;
 
         while cursor < bits.len() {
-            let cursor_before = cursor;
+            let mut found = false;
             for len in 1usize..=self.symbols.len() {
-                if cursor + len >= bits.len() {
+                if cursor + len > bits.len() {
                     break;
                 }
 
-                let mut found = false;
                 let sub_slice = &bits[cursor..(cursor + len)];
 
-                for symbol in &self.symbols[len - 1] {
-                    let bit_symbol = symbol.as_bitslice();
-                    let bits = &bit_symbol[(16 - len)..16];
-
-                    println!("testing symbol {} against {}", bits, sub_slice);
-                    if bits != sub_slice {
-                        continue;
-                    }
+                if let Some(translated) = translation.get(&BitVec::from_bitslice(sub_slice)) {
+                    result.extend_from_slice(&translated.to_be_bytes());
+                    println!("translated {} to {:#X?}", sub_slice, translated);
                     cursor = cursor + len;
                     found = true;
-
-                    match translation.get(&BitVec::<BigEndian, u16>::from_bitslice(bit_symbol)) {
-                        Some(&translated) => {
-                            result.extend_from_slice(&translated.to_be_bytes());
-                            println!("translated {} to {}", symbol, translated);
-                        }
-                        None => {
-                            return Err(ParserError {
-                                reason: format!("couldn't find translation for symbol {}", symbol),
-                            })
-                        }
-                    }
-                }
-
-                if found {
                     break;
                 }
             }
-            if cursor == cursor_before {
+            if !found {
                 return Err(ParserError {
-                    reason: "error huffman decoding stream: symbol not found at cursor".into(),
+                    reason: format!(
+                        "error huffman decoding stream: symbol not found at cursor {} with length {}",
+                        cursor,
+                        bits.len()).into(),
                 });
             }
         }
-
-        Ok(result.to_vec())
+        Ok(result)
     }
 
-    fn make_translation_map(&self) -> HashMap::<BitVec<BigEndian, u16>, u16> {
-        let mut translation = HashMap::<BitVec<BigEndian, u16>, u16>::new();
+    fn make_translation_map(&self) -> HashMap<BitVec, u8> {
+        let mut translation = HashMap::<BitVec, u8>::new();
         let mut current_code = 0u16;
 
         for len in 0..self.symbols.len() {
             for i in 0..self.symbols[len].len() {
-                let mut current_bits = BitVec::from_element(current_code);
+                let mut current_bits = BitVec::from_slice(&current_code.to_be_bytes());
                 translation.insert(
                     BitVec::from_bitslice(
-                        &current_bits[(self.symbols.len() - (len + 1))..self.symbols.len()],
+                        &current_bits[(current_bits.len() - (len + 1))..current_bits.len()],
                     ),
                     self.symbols[len][i],
                 );
@@ -130,41 +113,44 @@ mod tests {
 
         let translation = table.make_translation_map();
 
-        let v1 = bitvec!(BigEndian, u16; 0, 0);
+        let v1 = bitvec!(0, 0);
         assert_eq!(translation.get(&v1), Some(&0x01));
 
-        let v2 = bitvec!(BigEndian, u16; 0, 1, 0);
+        let v2 = bitvec!(0, 1, 0);
         assert_eq!(translation.get(&v2), Some(&0x02));
 
-        let v3 = bitvec!(BigEndian, u16; 1, 0, 1, 0);
+        let v3 = bitvec!(1, 0, 1, 0);
         assert_eq!(translation.get(&v3), Some(&0x04));
 
-        let v4 = bitvec!(BigEndian, u16; 1, 0, 1, 1);
+        let v4 = bitvec!(1, 0, 1, 1);
         assert_eq!(translation.get(&v4), Some(&0x21));
+
+        let v5 = bitvec!(1, 0, 0, 1);
+        assert_eq!(translation.get(&v5), Some(&0x03));
     }
 
     #[test]
     fn huffman_decode_test() {
-        let coded = vec![0b00011100, 0b10101011];
-        let decoded = vec![0x01, 0x02, 0x00, 0x11, 0x04];
+        let coded = vec![0b00001010, 0b10111001];
+        let decoded = vec![0x01, 0x01, 0x04, 0x21, 0x03];
         let table = HuffmanTable {
             class: DHTType::ChrominanceAC,
             symbols: [
                 vec![],
-                vec![0x01, 0x02],
-                vec![0x03],
-                vec![0x11, 0x04, 0x00],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
-                vec![],
+                vec![0x01],
+                vec![0x02, 0x11],
+                vec![0x00, 0x03, 0x04, 0x21],
+                vec![0x05, 0x12, 0x31],
+                vec![0x06, 0x41, 0x51, 0x61],
+                vec![0x13, 0x22, 0x71, 0x81, 0x91, 0xa1],
+                vec![0x14, 0x32, 0xb1, 0xd1, 0xf0],
+                vec![0x15, 0x23, 0x35, 0x42, 0xb2, 0xc1],
+                vec![0x07, 0x16, 0x24, 0x33, 0x52, 0x72, 0x73, 0xe1],
+                vec![0x25, 0x34, 0x43, 0x53, 0x62, 0x74, 0x82, 0x94, 0xa2, 0xf1],
+                vec![0x26, 0x44, 0x54, 0x63, 0x64, 0x92, 0x93, 0xc2, 0xd2],
+                vec![0x55, 0x56, 0x84, 0xb3],
+                vec![0x45, 0x83],
+                vec![0x46, 0xa3, 0xe2],
                 vec![],
             ],
         };
