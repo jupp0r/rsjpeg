@@ -9,6 +9,7 @@ use huffman::{DHTType, HuffmanTable};
 pub enum Marker<'a> {
     Other(SomeMarker<'a>),
     DHT(Vec<HuffmanTable>),
+    DQT(QuantizationTable<'a>),
     Image(ImageStream<'a>),
 }
 
@@ -22,6 +23,12 @@ pub struct SomeMarker<'a> {
 #[derive(Debug, Eq, PartialEq)]
 pub struct ImageStream<'a> {
     pub metadata: StartOfStreamMetaData,
+    pub data: &'a [u8],
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct QuantizationTable<'a> {
+    pub id: u64,
     pub data: &'a [u8],
 }
 
@@ -119,6 +126,16 @@ named!(huffman_table<&[u8], HuffmanTable>,
     ))
 );
 
+named!(quantization_table<&[u8], Marker>,
+    do_parse!(
+        tag!(b"\xff\xdb")
+        >> _length: be_u16
+        >> id: be_u8
+        >> data: take!(64)
+        >> (Marker::DQT(QuantizationTable{id: id.into(), data}))
+    )
+);
+
 named!(some_marker<&[u8], Marker>,
     do_parse!(
         tag!(b"\xff")
@@ -136,6 +153,7 @@ named!(jfif<&[u8], (Vec<Marker>, &[u8])>,
       many_till!(alt_complete!(
             start_of_stream
           | huffman_tables
+          | quantization_table
           | some_marker)
           , tag!(b"\xff\xd9")));
 
@@ -206,16 +224,15 @@ mod tests {
         assert_eq!(
             decode(&minimal_jpeg[..]).unwrap(),
             vec![
-                Marker::Other(SomeMarker {
-                    tag: 0xdb,
-                    length: 0x41,
+                Marker::DQT(QuantizationTable {
+                    id: 0,
                     data: &[
-                        0x00, 0x03, 0x02, 0x02, 0x02, 0x02, 0x02, 0x03, 0x02, 0x02, 0x02, 0x03,
-                        0x03, 0x03, 0x03, 0x04, 0x06, 0x04, 0x04, 0x04, 0x04, 0x04, 0x08, 0x06,
-                        0x06, 0x05, 0x06, 0x09, 0x08, 0x0A, 0x0A, 0x09, 0x08, 0x09, 0x09, 0x0A,
-                        0x0C, 0x0F, 0x0C, 0x0A, 0x0B, 0x0E, 0x0B, 0x09, 0x09, 0x0D, 0x11, 0x0D,
-                        0x0E, 0x0F, 0x10, 0x10, 0x11, 0x10, 0x0A, 0x0C, 0x12, 0x13, 0x12, 0x10,
-                        0x13, 0x0F, 0x10, 0x10, 0x10
+                        0x03, 0x02, 0x02, 0x02, 0x02, 0x02, 0x03, 0x02, 0x02, 0x02, 0x03, 0x03,
+                        0x03, 0x03, 0x04, 0x06, 0x04, 0x04, 0x04, 0x04, 0x04, 0x08, 0x06, 0x06,
+                        0x05, 0x06, 0x09, 0x08, 0x0A, 0x0A, 0x09, 0x08, 0x09, 0x09, 0x0A, 0x0C,
+                        0x0F, 0x0C, 0x0A, 0x0B, 0x0E, 0x0B, 0x09, 0x09, 0x0D, 0x11, 0x0D, 0x0E,
+                        0x0F, 0x10, 0x10, 0x11, 0x10, 0x0A, 0x0C, 0x12, 0x13, 0x12, 0x10, 0x13,
+                        0x0F, 0x10, 0x10, 0x10
                     ],
                 }),
                 Marker::Other(SomeMarker {
