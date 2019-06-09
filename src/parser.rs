@@ -21,7 +21,7 @@ pub struct SomeMarker<'a> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ImageStream<'a> {
-    pub metadata: &'a [u8],
+    pub metadata: StartOfStreamMetaData,
     pub data: &'a [u8],
 }
 
@@ -44,8 +44,8 @@ named!(
     start_of_stream<&[u8], Marker>,
     do_parse!(
         tag!(b"\xff\xda")
-            >> length: be_u16
-            >> metadata: take!(length - 2)
+            >> _length: be_u16
+            >> metadata: start_of_stream_metadata
             >> data: take_until!(&b"\xff\xd9"[..])
             >> (Marker::Image(ImageStream{ metadata, data }))
     )
@@ -216,21 +216,26 @@ mod tests {
                         0x0C, 0x0F, 0x0C, 0x0A, 0x0B, 0x0E, 0x0B, 0x09, 0x09, 0x0D, 0x11, 0x0D,
                         0x0E, 0x0F, 0x10, 0x10, 0x11, 0x10, 0x0A, 0x0C, 0x12, 0x13, 0x12, 0x10,
                         0x13, 0x0F, 0x10, 0x10, 0x10
-                    ]
+                    ],
                 }),
                 Marker::Other(SomeMarker {
                     tag: 0xc9,
                     length: 0x9,
-                    data: &[0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00]
+                    data: &[0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00],
                 }),
                 Marker::Other(SomeMarker {
                     tag: 0xcc,
                     length: 0x4,
-                    data: &[0x00, 0x10, 0x10, 0x05]
+                    data: &[0x00, 0x10, 0x10, 0x05],
                 }),
                 Marker::Image(ImageStream {
-                    metadata: &[0x01, 0x01, 0x00, 0x00, 0x3F, 0x00],
-                    data: &[0xD2, 0xCF, 0x20]
+                    metadata: StartOfStreamMetaData {
+                        precision: 1,
+                        height: 0x100,
+                        width: 0x3F,
+                        component_metadata: vec![]
+                    },
+                    data: &[0xD2, 0xCF, 0x20],
                 })
             ]
         );
