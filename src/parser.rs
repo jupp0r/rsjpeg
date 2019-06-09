@@ -25,6 +25,21 @@ pub struct ImageStream<'a> {
     pub data: &'a [u8],
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct StartOfStreamMetaData {
+    pub precision: u64,
+    pub height: u64,
+    pub width: u64,
+    pub component_metadata: Vec<ColorComponentMetaData>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ColorComponentMetaData {
+    pub id: u64,
+    pub sampling_resolution: u64,
+    pub quantization_table: u64,
+}
+
 named!(
     start_of_stream<&[u8], Marker>,
     do_parse!(
@@ -33,6 +48,33 @@ named!(
             >> metadata: take!(length - 2)
             >> data: take_until!(&b"\xff\xd9"[..])
             >> (Marker::Image(ImageStream{ metadata, data }))
+    )
+);
+
+named!(start_of_stream_metadata<&[u8], StartOfStreamMetaData>,
+    do_parse!(
+        precision: be_u8
+        >> height: be_u16
+        >> width: be_u16
+        >> components: be_u8
+        >> component_metadata: count!(color_component_metadata, components.into())
+        >> (StartOfStreamMetaData{
+            precision: precision.into(),
+            height: height.into(),
+            width: width.into(),
+            component_metadata})
+    )
+);
+
+named!(color_component_metadata<&[u8], ColorComponentMetaData>,
+    do_parse!(
+        id: be_u8
+        >> sampling_resolution: be_u8
+        >> quantization_table: be_u8
+        >> (ColorComponentMetaData{
+            id: id.into(),
+            sampling_resolution: sampling_resolution.into(),
+            quantization_table: quantization_table.into()})
     )
 );
 

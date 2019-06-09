@@ -24,8 +24,6 @@ impl HuffmanTable {
     pub fn huffman_decode(&self, code: &[u8]) -> Result<Vec<u8>, ParserError> {
         let translation = self.make_translation_map();
 
-        println!("tranlation map: {:?}", translation);
-
         let bits: &BitSlice = code.into();
         let mut result = Vec::new();
 
